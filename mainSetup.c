@@ -4,8 +4,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>
-#include <dirent.h>
-#include <sys/stat.h>
 
 /* This shell is completely created by Bilgehan Nal and Yusuf Kamil Ak.
 You can find details of implementation in Project Documentation
@@ -221,37 +219,6 @@ Bookmark* callBookmark(char *args[],Bookmark *HEAD) {
 }
 
 // MARK: Codesearch Manipulation
-
-void searchEntryInDirectory(char *entry, int isRecursive) {
-  struct dirent *dp;
-  DIR *dirp = opendir(".");
-
-  if (dirp == NULL)  // opendir returns NULL if couldn't open directory
-    {
-        printf("Could not open current directory" );
-        return;
-    }
-
-  while (dirp) {
-    errno = 0;
-    if ((dp = readdir(dirp)) != NULL) {
-        if (strcmp(dp->d_name, entry) == 0) {
-            fprintf(stderr, "%s\n", dp->d_name);
-            fprintf(stderr, "%s\n", entry);
-            closedir(dirp);
-            return;
-        }
-    } else {
-        if (errno == 0) {
-            closedir(dirp);
-            return;
-        }
-        closedir(dirp);
-        return;
-    }
-}
-return;
-}
 
 void callCodesearch(char *args[]) {
   char *command;
