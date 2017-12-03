@@ -4,6 +4,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <dirent.h>
+#include <sys/stat.h>
 
 /* This shell is completely created by Bilgehan Nal and Yusuf Kamil Ak.
 You can find details of implementation in Project Documentation
@@ -12,6 +14,7 @@ Bilgehan Nal - 150114038      Yusuf Kamil AK - 150116827  */
 
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
 #define MAX_POSSIBLE_CHAR_SIZE 128
+#define MAX_POSSIBLE_DIRECTION_SIZE 2048
 
 /* The setup function below will not return any value, but it will just: read
 in the next command line; separate it into distinct arguments (using blanks as
@@ -58,7 +61,7 @@ Bookmark* createNode(char *args[MAX_POSSIBLE_CHAR_SIZE]) {
   for( i = 0; i < MAX_POSSIBLE_CHAR_SIZE; i++ ) {
     if(args[i] == NULL) break;
     node->args[i] = strdup(args[i]);
-  } 
+  }
   //node -> args = args;
   node -> previous = NULL;
   node -> next = NULL;
@@ -71,7 +74,7 @@ Bookmark* insertNode(Bookmark *head, char* args[]) {
       Bookmark *tempNode = head;
       while(tempNode->next != NULL) {
           tempNode = tempNode -> next;
-      } 
+      }
       newNode -> id = (tempNode -> id) + 1;
       newNode -> previous = tempNode;
       tempNode -> next = newNode;
@@ -87,32 +90,32 @@ Bookmark* deleteNode(struct Bookmark *head_ref, int delId)
   /* base case */
   if(head_ref == NULL)
     return NULL;
- 
+
   /* If node to be deleted is head node */
-  
+
   if(head_ref->id == delId) {
     head_ref = head_ref->next;
     return head_ref;
   }
-    
+
 
   Bookmark *temp = head_ref;
   while(temp->id != delId) {
     temp = temp->next;
   }
- 
+
   /* Change next only if node to be deleted is NOT the last node */
   if(temp->next != NULL)
     temp->next->previous = temp->previous;
- 
+
   /* Change prev only if node to be deleted is NOT the first node */
   if(temp->previous != NULL)
-    temp->previous->next = temp->next;     
- 
+    temp->previous->next = temp->next;
+
   /* Finally, free the memory occupied by del*/
   free(temp);
   return head_ref;
-}  
+}
 
 // MARK: Input Manipulation
 
@@ -193,7 +196,7 @@ void printBookmark(Bookmark *node) {
 }
 
 Bookmark* callBookmark(char *args[],Bookmark *HEAD) {
-  
+
   if (strcmp(args[1],"-l") == 0) {
     Bookmark *tempNode = HEAD;
     while(tempNode != NULL) {
@@ -217,8 +220,55 @@ Bookmark* callBookmark(char *args[],Bookmark *HEAD) {
   return HEAD;
 }
 
-void callCodesearch(char *args[]) {
+// MARK: Codesearch Manipulation
 
+void searchEntryInDirectory(char *entry, int isRecursive) {
+  struct dirent *dp;
+  DIR *dirp = opendir(".");
+
+  if (dirp == NULL)  // opendir returns NULL if couldn't open directory
+    {
+        printf("Could not open current directory" );
+        return;
+    }
+
+  while (dirp) {
+    errno = 0;
+    if ((dp = readdir(dirp)) != NULL) {
+        if (strcmp(dp->d_name, entry) == 0) {
+            fprintf(stderr, "%s\n", dp->d_name);
+            fprintf(stderr, "%s\n", entry);
+            closedir(dirp);
+            return;
+        }
+    } else {
+        if (errno == 0) {
+            closedir(dirp);
+            return;
+        }
+        closedir(dirp);
+        return;
+    }
+}
+return;
+}
+
+void callCodesearch(char *args[]) {
+  char *command;
+  strcpy(command,"grep --include=\\*.{c,h}");
+  if (strcmp(args[1],"-r") == 0) {
+    strcat(command," -rn");
+    strcat(command," './' -e '");
+    strcat(command,(strcmp(args[1],"-r") == 0 ? args[2] : args[1]));
+    strcat(command,"'");
+  }else {
+    strcat(command," -sn");
+    strcat(command," \"");
+    strcat(command,args[1]);
+    strcat(command,"\" *.*");
+  }
+  fprintf(stderr, "\n");
+  system(command);
 }
 
 void callPrint(char *args[]) {
@@ -261,7 +311,7 @@ Bookmark* setJob(char *args[], int *background, Bookmark *HEAD) {
     char path1[MAX_POSSIBLE_CHAR_SIZE];
     char path2[MAX_POSSIBLE_CHAR_SIZE];
     char path3[MAX_POSSIBLE_CHAR_SIZE];
-    strcpy(path1,"/bin/"); strcpy(path2,"/usr/bin/"); strcpy(path3,"/usr/local/bin/"); 
+    strcpy(path1,"/bin/"); strcpy(path2,"/usr/bin/"); strcpy(path3,"/usr/local/bin/");
     strcat(path1,args[0]); strcat(path2,args[0]); strcat(path3,args[0]);
     if (execv(path1, args) == -1 && execv(path2, args) == -1 && execv(path3, args) == -1) {
       if (checkIfCustomCommand(args[0]) == -1) {
@@ -280,7 +330,7 @@ Bookmark* setJob(char *args[], int *background, Bookmark *HEAD) {
 }
 
 int main(void) {
-  
+
     char inputBuffer[MAX_LINE]; /*buffer to hold command entered */
     int background; /* equals 1 if a command is followed by '&' */
     char *args[MAX_LINE/2 + 1]; /*command line arguments */
@@ -290,16 +340,7 @@ int main(void) {
       fprintf(stderr,"myshell: ");
       /*setup() calls exit() when Control-D is entered */
       setup(inputBuffer, args, &background);
-      
+
       HEAD = setJob(args, &background,HEAD);
-
-      
-
-
-      /** the steps are:
-        (1) fork a child process using fork()
-        (2) the child process will invoke execv()
-				(3) if background == 0, the parent will wait,
-              otherwise it will invoke the setup() function again. */
     }
 }
