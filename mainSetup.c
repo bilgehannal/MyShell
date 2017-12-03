@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <limits.h>
+#include <fcntl.h>
 
 /* This shell is completely created by Bilgehan Nal and Yusuf Kamil Ak.
 You can find details of implementation in Project Documentation
@@ -12,7 +13,12 @@ Bilgehan Nal - 150114038      Yusuf Kamil AK - 150116827  */
 
 #define MAX_LINE 80 /* 80 chars per line, per command, should be enough. */
 #define MAX_POSSIBLE_CHAR_SIZE 128
-#define MAX_POSSIBLE_DIRECTION_SIZE 2048
+#define MAX_POSSIBLE_DIR_SIZE 2048
+#define OUTPUT_REDIRECTION 100
+#define NO_REDIRECTION -100
+#define OUTPUT_APPEND 101
+#define INPUT_REDIRECTION 200
+#define ERROR_REDIRECTION 400
 
 /* The setup function below will not return any value, but it will just: read
 in the next command line; separate it into distinct arguments (using blanks as
@@ -28,7 +34,7 @@ typedef struct Bookmark {
   struct Bookmark *next;
 }Bookmark;
 
-Bookmark* setJob(char *args[], int *background, Bookmark *HEAD);
+Bookmark* executeCommand(char *args[], int *background, Bookmark *HEAD);
 
 int getSizeOfArgs(char *args[]) {
   int counter = 0;
@@ -117,6 +123,11 @@ Bookmark* deleteNode(struct Bookmark *head_ref, int delId)
 
 // MARK: Input Manipulation
 
+void sigintHandler(int sig_num) {
+    signal(SIGINT, sigintHandler);
+    fflush(stdout);
+}
+
 void setup(char inputBuffer[], char *args[],int *background)
 {
     int length, /* # of characters in the command line */
@@ -182,7 +193,19 @@ void setup(char inputBuffer[], char *args[],int *background)
 
 // MARK: Implementations & Utility Functions of Custom Commands
 
-
+char **commandWithArgsWithoutRedirectionAndRest(char *args[],char *newArray[]) {
+  int i = 0;
+  while (args[i] != NULL) {
+    if (strcmp(args[i],">") == 0 || strcmp(args[i],"<") == 0
+      ||strcmp(args[i],">>") == 0 || strcmp(args[i],"2>") == 0 ) {
+      return newArray;
+    }else {
+      newArray[i] = args[i];
+    }
+    i++;
+  }
+  return newArray;
+}
 
 void printBookmark(Bookmark *node) {
   fprintf(stderr, "%d -> ", node->id );
@@ -207,7 +230,7 @@ Bookmark* callBookmark(char *args[],Bookmark *HEAD) {
       temp = temp->next;
     }
     int a = 0;
-    HEAD = setJob(temp->args, &a, HEAD);
+    HEAD = executeCommand(temp->args, &a, HEAD);
 
   }else if (strcmp(args[1],"-d") == 0) {
     HEAD = deleteNode(HEAD, atoi(args[2]));
@@ -221,7 +244,7 @@ Bookmark* callBookmark(char *args[],Bookmark *HEAD) {
 // MARK: Codesearch Manipulation
 
 void callCodesearch(char *args[]) {
-  char *command;
+  char *command = malloc(sizeof(char)*MAX_POSSIBLE_DIR_SIZE);
   strcpy(command,"grep --include=\\*.{c,h}");
   if (strcmp(args[1],"-r") == 0) {
     strcat(command," -rn");
@@ -236,6 +259,7 @@ void callCodesearch(char *args[]) {
   }
   fprintf(stderr, "\n");
   system(command);
+  free(command);
 }
 
 void callPrint(char *args[]) {
@@ -266,7 +290,43 @@ Bookmark* applyCustomCommands(char *args[],Bookmark *HEAD) {
 
 // MARK: Application Flow Manipulation
 
-Bookmark* setJob(char *args[], int *background, Bookmark *HEAD) {
+int containsRedirection(char *args[],int tolerance) {
+  int i = 0,toleranceCounter = 0;
+  while (args[i] != NULL) {
+    if (strcmp(args[i],">") == 0) {
+      if (tolerance == toleranceCounter) {
+        return OUTPUT_REDIRECTION;
+      }else {
+        toleranceCounter++;
+      }
+    }
+    else if (strcmp(args[i],">>") == 0) {
+      if (tolerance == toleranceCounter) {
+        return OUTPUT_APPEND;
+      }else {
+        toleranceCounter++;
+      }
+    }
+    else if (strcmp(args[i],"<") == 0) {
+      if (tolerance == toleranceCounter) {
+        return INPUT_REDIRECTION;
+      }else {
+        toleranceCounter++;
+      }
+    }
+    else if (strcmp(args[i],"2>") == 0) {
+      if (tolerance == toleranceCounter) {
+        return ERROR_REDIRECTION;
+      }else {
+        toleranceCounter++;
+      }
+    }
+    i++;
+  }
+  return NO_REDIRECTION;
+}
+
+Bookmark* executeCommand(char *args[], int *background, Bookmark *HEAD) {
   pid_t pid = fork();
   if (pid < 0) { /* If fork operation fails */
     /* handle error */
@@ -296,18 +356,89 @@ Bookmark* setJob(char *args[], int *background, Bookmark *HEAD) {
   return HEAD;
 }
 
+Bookmark* executeOutputRedirection(char *args[],int *background,Bookmark *HEAD) {
+  int output_fd;
+  int i = 1;
+  while (args[i] != NULL) {
+    if (strcmp(args[i-1],">") == 0) {
+      output_fd = creat(args[i],0644);
+      dup2(output_fd, 1);
+    }
+    if (strcmp(args[i-1],">>") == 0) {
+      output_fd = open(args[i],O_WRONLY|O_APPEND,0);
+      dup2(output_fd, 1);
+    }
+    if (strcmp(args[i-1],"2>") == 0) {
+      output_fd=open(args[i],O_WRONLY, 0);
+      dup2(output_fd, 2);
+    }
+    i++;
+  }
+  char *newArray[MAX_LINE/2 + 1];
+  close(output_fd);
+  HEAD = executeCommand(commandWithArgsWithoutRedirectionAndRest(args,newArray),background,HEAD);
+  return HEAD;
+}
+
+Bookmark* executeInputRedirection(char *args[],int *background,Bookmark *HEAD) {
+  int input_fd,length;
+  int i = 1;
+  char *inputBuffer = malloc(sizeof(char)*MAX_LINE);
+  while (args[i] != NULL) {
+    if (strcmp(args[i-1],"<") == 0) {
+      input_fd=open(args[i],O_RDONLY, 0);
+      if (input_fd < 0) {
+        fprintf(stderr, "Failed to open %s for reading\n", args[i]);
+        return HEAD;
+      }
+      length = read(input_fd,inputBuffer,MAX_LINE);
+      args[i-1] = inputBuffer;
+      // Assuming the input file will not include multiple lines.
+    }
+    i++;
+  }
+  char *newInputArray[MAX_LINE/2 + 1];
+  dup2(input_fd, 0);
+  close(input_fd);
+  HEAD = executeCommand(commandWithArgsWithoutRedirectionAndRest(args,newInputArray),background,HEAD);
+  return HEAD;
+}
+
+Bookmark *checkRedirectionOfCommands(char *args[],int *background, Bookmark *HEAD) {
+  switch (containsRedirection(args,0)) {
+    case NO_REDIRECTION:
+      HEAD = executeCommand(args,background,HEAD);
+      break;
+    case OUTPUT_REDIRECTION:
+      HEAD = executeOutputRedirection(args,background,HEAD);
+      break;
+    case INPUT_REDIRECTION:
+      HEAD = executeInputRedirection(args,background,HEAD);
+      break;
+    case OUTPUT_APPEND:
+      HEAD = executeOutputRedirection(args,background,HEAD);
+    case ERROR_REDIRECTION:
+      HEAD = executeOutputRedirection(args,background,HEAD);
+    default: break;
+  }
+  return HEAD;
+}
+
 int main(void) {
 
     char inputBuffer[MAX_LINE]; /*buffer to hold command entered */
     int background; /* equals 1 if a command is followed by '&' */
     char *args[MAX_LINE/2 + 1]; /*command line arguments */
+    char *cwd;
     Bookmark *HEAD = NULL;
+    signal(SIGINT,sigintHandler);
     while(1) {
       background = 0;
-      fprintf(stderr,"myshell: ");
+      cwd = getcwd(cwd,MAX_POSSIBLE_DIR_SIZE);
+      fprintf(stderr,"myshell:%s$",cwd);
       /*setup() calls exit() when Control-D is entered */
       setup(inputBuffer, args, &background);
 
-      HEAD = setJob(args, &background,HEAD);
+      HEAD = checkRedirectionOfCommands(args, &background,HEAD);
     }
 }
