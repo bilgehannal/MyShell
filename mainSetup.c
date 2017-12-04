@@ -34,7 +34,7 @@ typedef struct Bookmark {
   struct Bookmark *next;
 }Bookmark;
 
-char cwd[1024];
+extern char **environ;
 
 Bookmark* executeCommand(char *args[], int *background, Bookmark *HEAD);
 
@@ -265,7 +265,27 @@ void callCodesearch(char *args[]) {
 }
 
 void callPrint(char *args[]) {
-
+  char *s = *environ;
+  if(args[1] == NULL) {
+    int i = 1;
+    for (; s; i++) {
+      fprintf(stderr, "%s\n", s);
+      s = *(environ+i);
+    }
+  } else {
+    int i = 1;
+    for (; s; i++) {
+      char temp[1024];
+      strcpy(temp, s); 
+      char *token = strtok(temp, "=");
+      
+      if(strcmp(token, args[1]) == 0) {
+        token = strtok(NULL, "-");
+        fprintf(stderr, "%s\n", token);
+      }
+    s = *(environ+i);
+    }
+  }
 }
 
 void callSet(char *args[]) {
@@ -455,8 +475,6 @@ Bookmark *checkRedirectionOfCommands(char *args[],int *background, Bookmark *HEA
 }
 
 int main(void) {
-  chdir("/path/to/change/directory/to");
-  getcwd(cwd, sizeof(cwd));
   char inputBuffer[MAX_LINE]; /*buffer to hold command entered */
   int background; /* equals 1 if a command is followed by '&' */
   char *args[MAX_LINE/2 + 1]; /*command line arguments */
