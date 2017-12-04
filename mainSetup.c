@@ -280,7 +280,7 @@ void callPrint(char *args[]) {
       char *token = strtok(temp, "=");
       
       if(strcmp(token, args[1]) == 0) {
-        token = strtok(NULL, "-");
+        token = getenv(token);
         fprintf(stderr, "%s\n", token);
       }
     s = *(environ+i);
@@ -289,7 +289,22 @@ void callPrint(char *args[]) {
 }
 
 void callSet(char *args[]) {
+  char *command;
+  int size = strlen(args[1])+1;
+  
+  if(args[2] != NULL) size += strlen(args[2]);
+  if(args[3] != NULL) size += strlen(args[3]);
+  command = (char *)malloc(size);
 
+  strcpy(command, strdup(args[1]));
+  if(args[2] != NULL) strcat(command, strdup(args[2]));
+  if(args[3] != NULL) strcat(command, strdup(args[3]));
+  args[0] = NULL;
+  args[1] = NULL;
+  args[2] = NULL;
+
+  fprintf(stderr, "Come on: %s", command);
+  putenv(args[1]);
 }
 
 int checkIfCustomCommand(char *commandName) {
@@ -360,14 +375,14 @@ int containsRedirection(char *args[],int tolerance) {
 }
 
 void callExit(char *args[]) {
-  wait(NULL);
+  //wait(NULL);
   fprintf(stderr, "MyShell is terminated \n");
-  exit(0);
+  while(1)
+    exit(0);
 }
 
 Bookmark* executeCommand(char *args[], int *background, Bookmark *HEAD) {
   if (strcmp(args[0], "exit") == 0) {
-    wait(NULL);
     callExit(args); 
   } else {
     pid_t pid = fork();
