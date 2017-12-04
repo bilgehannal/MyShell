@@ -378,45 +378,44 @@ void callExit(char *args[]) {
   //wait(NULL);
   fprintf(stderr, "MyShell is terminated \n");
   while(1)
+    wait(NULL);
     exit(0);
 }
 
 Bookmark* executeCommand(char *args[], int *background, Bookmark *HEAD) {
-  if (strcmp(args[0], "exit") == 0) {
-    callExit(args); 
-  } else {
-    pid_t pid = fork();
-    if (pid < 0) { /* If fork operation fails */
-      /* handle error */
-      fprintf(stderr, "Something's wrong about creating a new process.\n");
-    }
-    if (pid == 0) { /* If process is child */
-      /* handle child process */
   
-      char path1[MAX_POSSIBLE_CHAR_SIZE];
-      char path2[MAX_POSSIBLE_CHAR_SIZE];
-      char path3[MAX_POSSIBLE_CHAR_SIZE];
-      strcpy(path1,"/bin/"); strcpy(path2,"/usr/bin/"); strcpy(path3,"/usr/local/bin/");
-      strcat(path1,args[0]); strcat(path2,args[0]); strcat(path3,args[0]);
-      if( strcmp(args[0], "cd") == 0) {
-        callCd(args);
-      } else {
-        if (execv(path1, args) == -1 && execv(path2, args) == -1 && execv(path3, args) == -1) {
-          if (checkIfCustomCommand(args[0]) == -1) {
-            fprintf(stderr, "Invalid command. Please be sure you inserted a right command.\n");
-          }else {
-            HEAD = applyCustomCommands(args,HEAD);
-          }
+  pid_t pid = fork();
+  if (pid < 0) { /* If fork operation fails */
+    /* handle error */
+    fprintf(stderr, "Something's wrong about creating a new process.\n");
+  }
+  if (pid == 0) { /* If process is child */
+    /* handle child process */
+
+    char path1[MAX_POSSIBLE_CHAR_SIZE];
+    char path2[MAX_POSSIBLE_CHAR_SIZE];
+    char path3[MAX_POSSIBLE_CHAR_SIZE];
+    strcpy(path1,"/bin/"); strcpy(path2,"/usr/bin/"); strcpy(path3,"/usr/local/bin/");
+    strcat(path1,args[0]); strcat(path2,args[0]); strcat(path3,args[0]);
+    if( strcmp(args[0], "cd") == 0) {
+      callCd(args);
+    } else {
+      if (execv(path1, args) == -1 && execv(path2, args) == -1 && execv(path3, args) == -1) {
+        if (checkIfCustomCommand(args[0]) == -1) {
+          fprintf(stderr, "Invalid command. Please be sure you inserted a right command.\n");
+        }else {
+          HEAD = applyCustomCommands(args,HEAD);
         }
       }
-     
-    }else { /* If process is parent */
-      if (*background == 0) {
-        /* parent process shall wait */
-        wait(NULL);
-      }
+    }
+    
+  }else { /* If process is parent */
+    if (*background == 0) {
+      /* parent process shall wait */
+      wait(NULL);
     }
   }
+
 
   return HEAD;
 }
@@ -502,6 +501,11 @@ int main(void) {
     fprintf(stderr,"myshell:%s$",cwd);
     /*setup() calls exit() when Control-D is entered */
     setup(inputBuffer, args, &background);
+    if (args[0] != NULL && strcmp(args[0], "exit") == 0) {
+      callExit(args); 
+    } 
     HEAD = checkRedirectionOfCommands(args, &background,HEAD);
+  
+    
     }
 }
