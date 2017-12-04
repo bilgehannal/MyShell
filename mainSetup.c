@@ -34,6 +34,8 @@ typedef struct Bookmark {
   struct Bookmark *next;
 }Bookmark;
 
+char cwd[1024];
+
 Bookmark* executeCommand(char *args[], int *background, Bookmark *HEAD);
 
 int getSizeOfArgs(char *args[]) {
@@ -275,9 +277,19 @@ int checkIfCustomCommand(char *commandName) {
       strcmp(commandName, "codesearch") == 0 ||
       strcmp(commandName, "print") == 0 ||
       strcmp(commandName, "set") == 0 ||
-      strcmp(commandName, "exit") == 0)
+      strcmp(commandName, "cd") == 0)
     return 1;
   return -1;
+}
+
+void callCd(char *args[]) {
+  char *h="/home";   
+  if(args[1]==NULL)
+          chdir(h);
+  else if ((strcmp(args[1], "")==0) || (strcmp(args[1], "/")==0))
+          chdir(h);
+  else if(chdir(args[1])<0)
+      printf("bash: cd: %s: No such file or directory\n", args[1]);
 }
 
 Bookmark* applyCustomCommands(char *args[],Bookmark *HEAD) {
@@ -285,6 +297,7 @@ Bookmark* applyCustomCommands(char *args[],Bookmark *HEAD) {
   else if (strcmp(args[0], "codesearch") == 0) { callCodesearch(args); }
   else if (strcmp(args[0], "print") == 0) { callPrint(args); }
   else if (strcmp(args[0], "set") == 0) { callSet(args); }
+  else if (strcmp(args[0], "cd") == 0) { callCd(args); }
   return HEAD;
 }
 
@@ -326,33 +339,50 @@ int containsRedirection(char *args[],int tolerance) {
   return NO_REDIRECTION;
 }
 
-Bookmark* executeCommand(char *args[], int *background, Bookmark *HEAD) {
-  pid_t pid = fork();
-  if (pid < 0) { /* If fork operation fails */
-    /* handle error */
-    fprintf(stderr, "Something's wrong about creating a new process.\n");
-  }
-  if (pid == 0) { /* If process is child */
-    /* handle child process */
+void callExit(char *args[]) {
+  wait(NULL);
+  fprintf(stderr, "MyShell is terminated \n");
+  exit(0);
+}
 
-    char path1[MAX_POSSIBLE_CHAR_SIZE];
-    char path2[MAX_POSSIBLE_CHAR_SIZE];
-    char path3[MAX_POSSIBLE_CHAR_SIZE];
-    strcpy(path1,"/bin/"); strcpy(path2,"/usr/bin/"); strcpy(path3,"/usr/local/bin/");
-    strcat(path1,args[0]); strcat(path2,args[0]); strcat(path3,args[0]);
-    if (execv(path1, args) == -1 && execv(path2, args) == -1 && execv(path3, args) == -1) {
-      if (checkIfCustomCommand(args[0]) == -1) {
-        fprintf(stderr, "Invalid command. Please be sure you inserted a right command.\n");
-      }else {
-        HEAD = applyCustomCommands(args,HEAD);
+Bookmark* executeCommand(char *args[], int *background, Bookmark *HEAD) {
+  if (strcmp(args[0], "exit") == 0) {
+    wait(NULL);
+    callExit(args); 
+  } else {
+    pid_t pid = fork();
+    if (pid < 0) { /* If fork operation fails */
+      /* handle error */
+      fprintf(stderr, "Something's wrong about creating a new process.\n");
+    }
+    if (pid == 0) { /* If process is child */
+      /* handle child process */
+  
+      char path1[MAX_POSSIBLE_CHAR_SIZE];
+      char path2[MAX_POSSIBLE_CHAR_SIZE];
+      char path3[MAX_POSSIBLE_CHAR_SIZE];
+      strcpy(path1,"/bin/"); strcpy(path2,"/usr/bin/"); strcpy(path3,"/usr/local/bin/");
+      strcat(path1,args[0]); strcat(path2,args[0]); strcat(path3,args[0]);
+      if( strcmp(args[0], "cd") == 0) {
+        callCd(args);
+      } else {
+        if (execv(path1, args) == -1 && execv(path2, args) == -1 && execv(path3, args) == -1) {
+          if (checkIfCustomCommand(args[0]) == -1) {
+            fprintf(stderr, "Invalid command. Please be sure you inserted a right command.\n");
+          }else {
+            HEAD = applyCustomCommands(args,HEAD);
+          }
+        }
+      }
+     
+    }else { /* If process is parent */
+      if (*background == 0) {
+        /* parent process shall wait */
+        wait(NULL);
       }
     }
-  }else { /* If process is parent */
-    if (*background == 0) {
-      /* parent process shall wait */
-      wait(NULL);
-    }
   }
+
   return HEAD;
 }
 
@@ -425,20 +455,20 @@ Bookmark *checkRedirectionOfCommands(char *args[],int *background, Bookmark *HEA
 }
 
 int main(void) {
-
-    char inputBuffer[MAX_LINE]; /*buffer to hold command entered */
-    int background; /* equals 1 if a command is followed by '&' */
-    char *args[MAX_LINE/2 + 1]; /*command line arguments */
-    char *cwd;
-    Bookmark *HEAD = NULL;
-    signal(SIGINT,sigintHandler);
-    while(1) {
-      background = 0;
-      cwd = getcwd(cwd,MAX_POSSIBLE_DIR_SIZE);
-      fprintf(stderr,"myshell:%s$",cwd);
-      /*setup() calls exit() when Control-D is entered */
-      setup(inputBuffer, args, &background);
-
-      HEAD = checkRedirectionOfCommands(args, &background,HEAD);
+  chdir("/path/to/change/directory/to");
+  getcwd(cwd, sizeof(cwd));
+  char inputBuffer[MAX_LINE]; /*buffer to hold command entered */
+  int background; /* equals 1 if a command is followed by '&' */
+  char *args[MAX_LINE/2 + 1]; /*command line arguments */
+  char *cwd;
+  Bookmark *HEAD = NULL;
+  signal(SIGINT,sigintHandler);
+  while(1) {
+    background = 0;
+    cwd = getcwd(cwd,MAX_POSSIBLE_DIR_SIZE);
+    fprintf(stderr,"myshell:%s$",cwd);
+    /*setup() calls exit() when Control-D is entered */
+    setup(inputBuffer, args, &background);
+    HEAD = checkRedirectionOfCommands(args, &background,HEAD);
     }
 }
