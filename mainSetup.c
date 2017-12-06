@@ -132,6 +132,11 @@ void sigintHandler(int sig_num) {
 
 void setup(char inputBuffer[], char *args[],int *background)
 {
+  int argsIndex = 0;
+  while(args[argsIndex] != NULL) {
+    strcmp(args[0], "");
+    argsIndex++;
+  }
     int length, /* # of characters in the command line */
         i,      /* loop index for accessing inputBuffer array */
         start,  /* index where beginning of next command parameter is */
@@ -377,7 +382,6 @@ int containsRedirection(char *args[],int tolerance) {
 void callExit(char *args[]) {
   //wait(NULL);
   fprintf(stderr, "MyShell is terminated \n");
-  while(1)
     wait(NULL);
     exit(0);
 }
@@ -498,14 +502,12 @@ int main(void) {
   while(1) {
     background = 0;
     cwd = getcwd(cwd,MAX_POSSIBLE_DIR_SIZE);
-    fprintf(stderr,"myshell:%s$",cwd);
+    fprintf(stderr,"myshell:%s$ ",cwd);
     /*setup() calls exit() when Control-D is entered */
     setup(inputBuffer, args, &background);
     if (args[0] != NULL && strcmp(args[0], "exit") == 0) {
       callExit(args); 
     } 
     HEAD = checkRedirectionOfCommands(args, &background,HEAD);
-  
-    
     }
 }
