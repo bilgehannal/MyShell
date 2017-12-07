@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <limits.h>
 #include <fcntl.h>
+#include <signal.h>
 
 /* This shell is completely created by Bilgehan Nal and Yusuf Kamil Ak.
 You can find details of implementation in Project Documentation
@@ -124,11 +125,6 @@ Bookmark* deleteNode(struct Bookmark *head_ref, int delId)
 }
 
 // MARK: Input Manipulation
-
-void sigintHandler(int sig_num) {
-    signal(SIGINT, sigintHandler);
-    fflush(stdout);
-}
 
 void setup(char inputBuffer[], char *args[],int *background)
 {
@@ -281,9 +277,9 @@ void callPrint(char *args[]) {
     int i = 1;
     for (; s; i++) {
       char temp[1024];
-      strcpy(temp, s); 
+      strcpy(temp, s);
       char *token = strtok(temp, "=");
-      
+
       if(strcmp(token, args[1]) == 0) {
         token = getenv(token);
         fprintf(stderr, "%s\n", token);
@@ -296,7 +292,7 @@ void callPrint(char *args[]) {
 void callSet(char *args[]) {
   char *command;
   int size = strlen(args[1])+1;
-  
+
   if(args[2] != NULL) size += strlen(args[2]);
   if(args[3] != NULL) size += strlen(args[3]);
   command = (char *)malloc(size);
@@ -307,8 +303,6 @@ void callSet(char *args[]) {
   args[0] = NULL;
   args[1] = NULL;
   args[2] = NULL;
-
-  fprintf(stderr, "Come on: %s", command);
   putenv(args[1]);
 }
 
@@ -323,7 +317,7 @@ int checkIfCustomCommand(char *commandName) {
 }
 
 void callCd(char *args[]) {
-  char *h="/home";   
+  char *h="/home";
   if(args[1]==NULL)
           chdir(h);
   else if ((strcmp(args[1], "")==0) || (strcmp(args[1], "/")==0))
@@ -382,12 +376,12 @@ int containsRedirection(char *args[],int tolerance) {
 void callExit(char *args[]) {
   //wait(NULL);
   fprintf(stderr, "MyShell is terminated \n");
-    wait(NULL);
-    exit(0);
+  wait(NULL);
+  kill(getpid(),SIGKILL);
 }
 
 Bookmark* executeCommand(char *args[], int *background, Bookmark *HEAD) {
-  
+
   pid_t pid = fork();
   if (pid < 0) { /* If fork operation fails */
     /* handle error */
@@ -412,39 +406,39 @@ Bookmark* executeCommand(char *args[], int *background, Bookmark *HEAD) {
         }
       }
     }
-    
-  }else { /* If process is parent */
-    if (*background == 0) {
-      /* parent process shall wait */
-      wait(NULL);
-    }
   }
-
-
   return HEAD;
 }
 
 Bookmark* executeOutputRedirection(char *args[],int *background,Bookmark *HEAD) {
   int output_fd;
   int i = 1;
-  while (args[i] != NULL) {
-    if (strcmp(args[i-1],">") == 0) {
-      output_fd = creat(args[i],0644);
-      dup2(output_fd, 1);
+  pid_t pid;
+  pid = fork();
+  if (pid < 0) { // fork error
+    fprintf(stderr, "Fork Error\n");
+  } else if(pid == 0) { // child process
+
+    while (args[i] != NULL) {
+      if (strcmp(args[i-1],">") == 0) {
+        output_fd = creat(args[i],0644);
+        dup2(output_fd, 1);
+      }
+      if (strcmp(args[i-1],">>") == 0) {
+        output_fd = open(args[i],O_WRONLY|O_APPEND,0);
+        dup2(output_fd, 1);
+      }
+      if (strcmp(args[i-1],"2>") == 0) {
+        output_fd=open(args[i],O_WRONLY, 0);
+        dup2(output_fd, 2);
+      }
+      i++;
     }
-    if (strcmp(args[i-1],">>") == 0) {
-      output_fd = open(args[i],O_WRONLY|O_APPEND,0);
-      dup2(output_fd, 1);
-    }
-    if (strcmp(args[i-1],"2>") == 0) {
-      output_fd=open(args[i],O_WRONLY, 0);
-      dup2(output_fd, 2);
-    }
-    i++;
+    char *newArray[MAX_LINE/2 + 1];
+    close(output_fd);
+    HEAD = executeCommand(commandWithArgsWithoutRedirectionAndRest(args,newArray),background,HEAD);
+    kill(getpid(),SIGKILL);
   }
-  char *newArray[MAX_LINE/2 + 1];
-  close(output_fd);
-  HEAD = executeCommand(commandWithArgsWithoutRedirectionAndRest(args,newArray),background,HEAD);
   return HEAD;
 }
 
@@ -452,42 +446,48 @@ Bookmark* executeInputRedirection(char *args[],int *background,Bookmark *HEAD) {
   int input_fd,length;
   int i = 1;
   char *inputBuffer = malloc(sizeof(char)*MAX_LINE);
-  while (args[i] != NULL) {
-    if (strcmp(args[i-1],"<") == 0) {
-      input_fd=open(args[i],O_RDONLY, 0);
-      if (input_fd < 0) {
-        fprintf(stderr, "Failed to open %s for reading\n", args[i]);
-        return HEAD;
+  pid_t pid;
+  pid = fork();
+  if (pid < 0) { // fork error
+    fprintf(stderr, "Fork Error\n");
+  } else if(pid == 0) { // child process
+    while (args[i] != NULL) {
+        input_fd=open(args[i],O_RDONLY, 0);
+        if (input_fd < 0) {
+          fprintf(stderr, "Failed to open %s for reading\n", args[i]);
+          return HEAD;
+        }
+        length = read(input_fd,inputBuffer,MAX_LINE);
+        args[i-1] = inputBuffer;
+        // Assuming the input file will not include multiple lines.
       }
-      length = read(input_fd,inputBuffer,MAX_LINE);
-      args[i-1] = inputBuffer;
-      // Assuming the input file will not include multiple lines.
+      i++;
     }
-    i++;
+    char *newInputArray[MAX_LINE/2 + 1];
+    dup2(input_fd, 0);
+    close(input_fd);
+    HEAD = executeCommand(commandWithArgsWithoutRedirectionAndRest(args,newInputArray),background,HEAD);
+    kill(getpid(),SIGKILL);
   }
-  char *newInputArray[MAX_LINE/2 + 1];
-  dup2(input_fd, 0);
-  close(input_fd);
-  HEAD = executeCommand(commandWithArgsWithoutRedirectionAndRest(args,newInputArray),background,HEAD);
   return HEAD;
 }
 
 Bookmark *checkRedirectionOfCommands(char *args[],int *background, Bookmark *HEAD) {
-  switch (containsRedirection(args,0)) {
-    case NO_REDIRECTION:
-      HEAD = executeCommand(args,background,HEAD);
-      break;
-    case OUTPUT_REDIRECTION:
-      HEAD = executeOutputRedirection(args,background,HEAD);
-      break;
-    case INPUT_REDIRECTION:
-      HEAD = executeInputRedirection(args,background,HEAD);
-      break;
-    case OUTPUT_APPEND:
-      HEAD = executeOutputRedirection(args,background,HEAD);
-    case ERROR_REDIRECTION:
-      HEAD = executeOutputRedirection(args,background,HEAD);
-    default: break;
+    switch (containsRedirection(args,0)) {
+      case NO_REDIRECTION:
+        HEAD = executeCommand(args,background,HEAD);
+        break;
+      case OUTPUT_REDIRECTION:
+        HEAD = executeOutputRedirection(args,background,HEAD);
+        break;
+      case INPUT_REDIRECTION:
+        HEAD = executeInputRedirection(args,background,HEAD);
+        break;
+      case OUTPUT_APPEND:
+        HEAD = executeOutputRedirection(args,background,HEAD);
+      case ERROR_REDIRECTION:
+        HEAD = executeOutputRedirection(args,background,HEAD);
+      default: break;
   }
   return HEAD;
 }
@@ -498,16 +498,20 @@ int main(void) {
   char *args[MAX_LINE/2 + 1]; /*command line arguments */
   char *cwd;
   Bookmark *HEAD = NULL;
-  signal(SIGINT,sigintHandler);
+
   while(1) {
+    fprintf(stderr, "%d\n", getpid());
     background = 0;
     cwd = getcwd(cwd,MAX_POSSIBLE_DIR_SIZE);
     fprintf(stderr,"myshell:%s$ ",cwd);
     /*setup() calls exit() when Control-D is entered */
     setup(inputBuffer, args, &background);
     if (args[0] != NULL && strcmp(args[0], "exit") == 0) {
-      callExit(args); 
-    } 
-    HEAD = checkRedirectionOfCommands(args, &background,HEAD);
+      callExit(args);
     }
+    HEAD = checkRedirectionOfCommands(args, &background,HEAD);
+    if (background == 0) { /* parent process shall wait */
+      wait(NULL);
+    }
+  }
 }
