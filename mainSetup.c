@@ -296,14 +296,12 @@ void callSet(char *args[]) {
   if(args[2] != NULL) size += strlen(args[2]);
   if(args[3] != NULL) size += strlen(args[3]);
   command = (char *)malloc(size);
-
+  
   strcpy(command, strdup(args[1]));
   if(args[2] != NULL) strcat(command, strdup(args[2]));
   if(args[3] != NULL) strcat(command, strdup(args[3]));
-  args[0] = NULL;
-  args[1] = NULL;
-  args[2] = NULL;
-  putenv(args[1]);
+  fprintf(stderr, "added: %s\n", command);
+  putenv(command);
 }
 
 int checkIfCustomCommand(char *commandName) {
