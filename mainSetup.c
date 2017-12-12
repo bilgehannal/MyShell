@@ -410,7 +410,7 @@ Bookmark* executeCommand(char *args[], int *background, Bookmark *HEAD) {
   return HEAD;
 }
 
-Bookmark* executeOutputRedirection(char *args[],int *background,Bookmark *HEAD) {
+Bookmark* executeOutputRedirection(char *args[],int *background,Bookmark *HEAD,int isMultipleCommand) {
   int output_fd;
   int i = 1;
   pid_t pid;
@@ -422,14 +422,17 @@ Bookmark* executeOutputRedirection(char *args[],int *background,Bookmark *HEAD) 
     while (args[i] != NULL) {
       if (strcmp(args[i-1],">") == 0) {
         output_fd = creat(args[i],0644);
-        dup2(output_fd, 1);
+        dup2(output_fd,1);
+        if (isMultipleCommand == 1) {
+          close(0);
+        }
       }
       if (strcmp(args[i-1],">>") == 0) {
-        output_fd = open(args[i],O_WRONLY|O_APPEND,0);
+        output_fd = open(args[i],O_CREAT|O_WRONLY|O_APPEND,0666);
         dup2(output_fd, 1);
       }
       if (strcmp(args[i-1],"2>") == 0) {
-        output_fd=open(args[i],O_WRONLY, 0);
+        output_fd= creat(args[i],0666);
         dup2(output_fd, 2);
       }
       i++;
@@ -442,7 +445,7 @@ Bookmark* executeOutputRedirection(char *args[],int *background,Bookmark *HEAD) 
   return HEAD;
 }
 
-Bookmark* executeInputRedirection(char *args[],int *background,Bookmark *HEAD) {
+Bookmark* executeInputRedirection(char *args[],int *background,Bookmark *HEAD,int isMultipleCommand) {
   int input_fd,length;
   int i = 1;
   char *inputBuffer = malloc(sizeof(char)*MAX_LINE);
@@ -452,42 +455,53 @@ Bookmark* executeInputRedirection(char *args[],int *background,Bookmark *HEAD) {
     fprintf(stderr, "Fork Error\n");
   } else if(pid == 0) { // child process
     while (args[i] != NULL) {
-        input_fd=open(args[i],O_RDONLY, 0);
+      if (strcmp(args[i-1],"<") == 0) {
+        input_fd = open(args[i],O_RDONLY,0);
         if (input_fd < 0) {
           fprintf(stderr, "Failed to open %s for reading\n", args[i]);
           return HEAD;
         }
         length = read(input_fd,inputBuffer,MAX_LINE);
         args[i-1] = inputBuffer;
-        // Assuming the input file will not include multiple lines.
+
       }
       i++;
     }
-    char *newInputArray[MAX_LINE/2 + 1];
     dup2(input_fd, 0);
-    close(input_fd);
+    char *newInputArray[MAX_LINE/2 + 1];
+    if (isMultipleCommand == 0) {
+      close(input_fd);
+    }
     HEAD = executeCommand(commandWithArgsWithoutRedirectionAndRest(args,newInputArray),background,HEAD);
-    kill(getpid(),SIGKILL);
   }
   return HEAD;
 }
 
 Bookmark *checkRedirectionOfCommands(char *args[],int *background, Bookmark *HEAD) {
-    switch (containsRedirection(args,0)) {
+  int i = 0;
+  int isMultiple = containsRedirection(args,1) == NO_REDIRECTION ? 0 : 1;
+  while (i < isMultiple + 1) {
+    switch (containsRedirection(args,i)) {
       case NO_REDIRECTION:
-        HEAD = executeCommand(args,background,HEAD);
-        break;
+        if (i == 0) {
+          HEAD = executeCommand(args,background,HEAD);
+        }
+        if (isMultiple == 0) { break; }
       case OUTPUT_REDIRECTION:
-        HEAD = executeOutputRedirection(args,background,HEAD);
+        HEAD = executeOutputRedirection(args,background,HEAD,isMultiple);
         break;
       case INPUT_REDIRECTION:
-        HEAD = executeInputRedirection(args,background,HEAD);
+        HEAD = executeInputRedirection(args,background,HEAD,isMultiple);
         break;
       case OUTPUT_APPEND:
-        HEAD = executeOutputRedirection(args,background,HEAD);
+        HEAD = executeOutputRedirection(args,background,HEAD,isMultiple);
+        break;
       case ERROR_REDIRECTION:
-        HEAD = executeOutputRedirection(args,background,HEAD);
+        HEAD = executeOutputRedirection(args,background,HEAD,isMultiple);
+        break;
       default: break;
+    }
+    i++;
   }
   return HEAD;
 }
@@ -500,7 +514,6 @@ int main(void) {
   Bookmark *HEAD = NULL;
 
   while(1) {
-    fprintf(stderr, "%d\n", getpid());
     background = 0;
     cwd = getcwd(cwd,MAX_POSSIBLE_DIR_SIZE);
     fprintf(stderr,"myshell:%s$ ",cwd);
